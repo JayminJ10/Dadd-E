@@ -3,7 +3,6 @@ Supabase database service
 """
 from datetime import datetime
 from typing import Any, Optional
-from supabase import create_client, Client
 from app.core.config import get_settings
 from app.models.schemas import UserProfile, SessionState, DeviceStatus
 
@@ -12,8 +11,17 @@ class DatabaseService:
     """Service for database operations using Supabase"""
 
     def __init__(self) -> None:
-        settings = get_settings()
-        self.client: Client = create_client(settings.supabase_url, settings.supabase_key)
+        try:
+            # Lazy import to avoid websockets version conflict
+            from supabase import create_client, Client
+            settings = get_settings()
+            self.client: Client = create_client(settings.supabase_url, settings.supabase_key)
+        except ImportError as e:
+            raise ImportError(
+                f"Supabase not available: {e}. "
+                "This is due to websockets version conflict. "
+                "Database features disabled for now."
+            ) from e
 
     # User Management
     async def get_user(self, user_id: str) -> Optional[dict[str, Any]]:

@@ -22,8 +22,10 @@ async def transcribe_audio(websocket: WebSocket, user_id: str) -> None:
     await websocket.accept()
     settings = get_settings()
     voice_service = VoiceService()
-    vision_service = VisionService()
-    db_service = DatabaseService()
+
+    # Lazy-load services only when needed (after wake word detection)
+    vision_service = None
+    db_service = None
 
     try:
         # Buffer for wake word detection
@@ -32,7 +34,7 @@ async def transcribe_audio(websocket: WebSocket, user_id: str) -> None:
 
         async def handle_transcript(text: str) -> None:
             """Handle transcribed text"""
-            nonlocal wake_word_detected
+            nonlocal wake_word_detected, vision_service, db_service
 
             # Add to buffer
             transcription_buffer.append(text)
@@ -60,6 +62,22 @@ async def transcribe_audio(websocket: WebSocket, user_id: str) -> None:
 
             # If wake word is active, process the command
             if wake_word_detected:
+                # Lazy-load services when wake word is first detected
+                if vision_service is None:
+                    try:
+                        vision_service = VisionService()
+                    except Exception as e:
+                        print(f"⚠️  Vision service not available: {e}")
+                        await websocket.send_json({"type": "error", "message": f"Vision unavailable: {e}"})
+                        return
+
+                if db_service is None:
+                    try:
+                        db_service = DatabaseService()
+                    except Exception as e:
+                        print(f"⚠️  Database service not available: {e}")
+                        # Continue without database
+
                 # Classify intent
                 intent_result = await vision_service.classify_intent(
                     text, context={"user_id": user_id}
@@ -74,15 +92,19 @@ async def transcribe_audio(websocket: WebSocket, user_id: str) -> None:
                     }
                 )
 
-                # Log to database
-                await db_service.log_action(
-                    {
-                        "user_id": user_id,
-                        "action_type": "voice_command",
-                        "intent": intent_result["intent"],
-                        "text": text,
-                    }
-                )
+                # Log to database (if available)
+                if db_service:
+                    try:
+                        await db_service.log_action(
+                            {
+                                "user_id": user_id,
+                                "action_type": "voice_command",
+                                "intent": intent_result["intent"],
+                                "text": text,
+                            }
+                        )
+                    except Exception as e:
+                        print(f"⚠️  Could not log to database: {e}")
 
         # Start transcription
         await voice_service.start_transcription(
@@ -105,8 +127,8 @@ async def transcribe_audio(websocket: WebSocket, user_id: str) -> None:
         await websocket.close()
 
 
-@router.post("/wake-word-test")
-async def test_wake_word(text: str) -> dict[str, bool]:
+@router.get("/wake-word-test")
+async def test_wake_word(text: str) -> dict[str, str | bool]:
     """
     Test wake word detection
 

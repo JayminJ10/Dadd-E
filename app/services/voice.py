@@ -3,7 +3,8 @@ Deepgram voice transcription (STT) service
 Using Deepgram SDK v2.12.0 (compatible with omi-sdk)
 """
 import asyncio
-from typing import Callable, Optional
+import inspect
+from typing import Callable, Union, Awaitable, Optional
 from deepgram import Deepgram
 from app.core.config import get_settings
 
@@ -19,24 +20,29 @@ class VoiceService:
 
     async def start_transcription(
         self,
-        on_transcript: Callable[[str], None],
+        on_transcript: Union[Callable[[str], None], Callable[[str], Awaitable[None]]],
         language: str = "en",
     ) -> None:
         """
         Start real-time transcription
 
         Args:
-            on_transcript: Callback function to handle transcribed text
+            on_transcript: Callback function (sync or async) to handle transcribed text
             language: Language code for transcription
         """
         try:
-            # Create live transcription connection
-            self.connection = self.client.transcription.live({
+            # Create live transcription connection (this is a coroutine in v2)
+            # Deepgram can auto-detect audio format, but we can specify encoding
+            # Common formats: linear16 (PCM), opus, mp3, flac
+            self.connection = await self.client.transcription.live({
                 "punctuate": True,
                 "interim_results": False,
                 "language": language,
                 "model": "nova-2",
                 "smart_format": True,
+                "encoding": "linear16",  # PCM 16-bit
+                "sample_rate": 16000,  # 16kHz (match Omi device)
+                "channels": 1,  # Mono
             })
 
             # Set up event handlers
@@ -44,7 +50,11 @@ class VoiceService:
                 try:
                     transcript = data["channel"]["alternatives"][0]["transcript"]
                     if transcript and len(transcript) > 0:
-                        on_transcript(transcript)
+                        # Handle both sync and async callbacks
+                        if inspect.iscoroutinefunction(on_transcript):
+                            asyncio.create_task(on_transcript(transcript))
+                        else:
+                            on_transcript(transcript)
                 except (KeyError, IndexError) as e:
                     print(f"Error parsing transcript: {e}")
 

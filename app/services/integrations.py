@@ -2,7 +2,6 @@
 Composio integration service for app connections
 """
 from typing import Any, Optional
-from composio_openai import ComposioToolSet, App, Action
 from app.core.config import get_settings
 
 
@@ -10,8 +9,16 @@ class IntegrationService:
     """Service for managing app integrations via Composio"""
 
     def __init__(self) -> None:
-        settings = get_settings()
-        self.toolset = ComposioToolSet(api_key=settings.composio_api_key)
+        try:
+            # Lazy import to avoid dependency issues
+            from composio_openai import ComposioToolSet
+            settings = get_settings()
+            self.toolset = ComposioToolSet(api_key=settings.composio_api_key)
+        except ImportError as e:
+            raise ImportError(
+                f"Composio not available: {e}. "
+                "Integration features disabled for now."
+            ) from e
 
     async def check_slack_messages(
         self, user_id: str, channel: str = "general"

@@ -14,6 +14,7 @@ class OmiDeviceService:
         self,
         device_mac: str,
         audio_char_uuid: str = "19B10001-E8F2-537E-4F6C-D104768A1214",
+        use_opus_decoder: bool = True,
     ) -> None:
         """
         Initialize Omi device service
@@ -21,13 +22,15 @@ class OmiDeviceService:
         Args:
             device_mac: MAC address of the Omi device
             audio_char_uuid: UUID for audio characteristic
+            use_opus_decoder: Whether to use Opus decoder (False for raw audio)
         """
         self.device_mac = device_mac
         self.audio_char_uuid = audio_char_uuid
         self.audio_queue: Queue[bytes] = Queue()
         self.frame_buffer: Optional[bytes] = None
         self.is_connected = False
-        self.decoder = OmiOpusDecoder()
+        self.use_opus_decoder = use_opus_decoder
+        self.decoder = OmiOpusDecoder() if use_opus_decoder else None
 
     async def connect(self, on_audio_callback: Callable[[bytes], None]) -> None:
         """
@@ -40,15 +43,21 @@ class OmiDeviceService:
         def handle_audio(sender: any, data: bytes) -> None:
             """Handle raw audio data from Omi device"""
             try:
-                # Decode Opus audio to PCM
-                pcm_data = self.decoder.decode_packet(data)
-                if pcm_data:
-                    # Put decoded audio in queue
-                    self.audio_queue.put_nowait(pcm_data)
-                    # Call the callback
-                    on_audio_callback(pcm_data)
+                if self.use_opus_decoder and self.decoder:
+                    # Decode Opus audio to PCM
+                    pcm_data = self.decoder.decode_packet(data)
+                    if pcm_data:
+                        # Put decoded audio in queue
+                        self.audio_queue.put_nowait(pcm_data)
+                        # Call the callback
+                        on_audio_callback(pcm_data)
+                else:
+                    # Send raw audio data without decoding
+                    if data and len(data) > 0:
+                        self.audio_queue.put_nowait(data)
+                        on_audio_callback(data)
             except Exception as e:
-                print(f"Error handling audio: {e}")
+                print(f"❌ Error handling audio: {e}")
 
         try:
             print(f"Connecting to Omi device: {self.device_mac}")

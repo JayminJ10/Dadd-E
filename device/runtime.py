@@ -24,8 +24,17 @@ class DaddERuntime:
 
     def __init__(self) -> None:
         self.device_mac = os.getenv("OMI_DEVICE_MAC", "")
+        self.audio_char_uuid = os.getenv(
+            "OMI_AUDIO_CHAR_UUID", "19b10005-e8f2-537e-4f6c-d104768a1214"
+        )
+        # Option to disable Opus decoding (for raw audio)
+        self.use_opus_decoder = os.getenv("USE_OPUS_DECODER", "false").lower() == "true"
         self.backend_url = os.getenv("BACKEND_URL", "http://localhost:8000")
-        self.websocket_url = self.backend_url.replace("http", "ws")
+        # Handle both http/https to ws/wss conversion
+        if self.backend_url.startswith("https"):
+            self.websocket_url = self.backend_url.replace("https", "wss")
+        else:
+            self.websocket_url = self.backend_url.replace("http", "ws")
         self.user_id = os.getenv("USER_ID", "test_user")
         self.omi_service: Optional[OmiDeviceService] = None
         self.ws_connection: Optional[any] = None
@@ -42,7 +51,13 @@ class DaddERuntime:
             return
 
         # Initialize Omi service
-        self.omi_service = OmiDeviceService(self.device_mac)
+        self.omi_service = OmiDeviceService(
+            self.device_mac,
+            self.audio_char_uuid,
+            use_opus_decoder=self.use_opus_decoder,
+        )
+        print(f"🎧 Audio characteristic: {self.audio_char_uuid}")
+        print(f"🔊 Opus decoder: {'Enabled' if self.use_opus_decoder else 'Disabled (raw audio)'}")
 
         # Connect to backend WebSocket
         await self.connect_to_backend()
