@@ -32,14 +32,16 @@ class VoiceService:
         """
         try:
             # Create live transcription connection (this is a coroutine in v2)
-            # Let Deepgram auto-detect audio format since we're not sure of the raw format
+            # We're sending PCM audio decoded from Opus
             self.connection = await self.client.transcription.live({
                 "punctuate": True,
                 "interim_results": True,  # Enable for faster feedback
                 "language": language,
                 "model": "nova-2",
                 "smart_format": True,
-                # Removed encoding params - let Deepgram auto-detect
+                "encoding": "linear16",  # PCM 16-bit (decoded from Opus)
+                "sample_rate": 16000,  # 16kHz
+                "channels": 1,  # Mono
             })
 
             # Set up event handlers

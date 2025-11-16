@@ -3,7 +3,8 @@ Omi Device Service - Handles connection and communication with Omi glasses
 """
 import asyncio
 from typing import Callable, Optional
-from omi import listen_to_omi, OmiOpusDecoder
+from omi import listen_to_omi
+from device.quiet_decoder import QuietOmiOpusDecoder
 from asyncio import Queue
 
 
@@ -30,7 +31,7 @@ class OmiDeviceService:
         self.frame_buffer: Optional[bytes] = None
         self.is_connected = False
         self.use_opus_decoder = use_opus_decoder
-        self.decoder = OmiOpusDecoder() if use_opus_decoder else None
+        self.decoder = QuietOmiOpusDecoder() if use_opus_decoder else None
 
     async def connect(self, on_audio_callback: Callable[[bytes], None]) -> None:
         """
@@ -39,18 +40,30 @@ class OmiDeviceService:
         Args:
             on_audio_callback: Callback function to handle decoded audio data
         """
+        decode_success = 0
+        decode_fail = 0
 
         def handle_audio(sender: any, data: bytes) -> None:
             """Handle raw audio data from Omi device"""
+            nonlocal decode_success, decode_fail
             try:
                 if self.use_opus_decoder and self.decoder:
                     # Decode Opus audio to PCM
                     pcm_data = self.decoder.decode_packet(data)
                     if pcm_data:
+                        decode_success += 1
+                        # Log stats every 100 packets
+                        if (decode_success + decode_fail) % 100 == 0:
+                            total = decode_success + decode_fail
+                            success_rate = (decode_success / total) * 100
+                            print(f"📊 Audio: {decode_success} OK, {decode_fail} failed ({success_rate:.1f}% success)")
+
                         # Put decoded audio in queue
                         self.audio_queue.put_nowait(pcm_data)
                         # Call the callback
                         on_audio_callback(pcm_data)
+                    else:
+                        decode_fail += 1
                 else:
                     # Send raw audio data without decoding
                     if data and len(data) > 0:
