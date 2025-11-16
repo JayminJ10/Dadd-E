@@ -32,31 +32,43 @@ class VoiceService:
         """
         try:
             # Create live transcription connection (this is a coroutine in v2)
-            # Deepgram can auto-detect audio format, but we can specify encoding
-            # Common formats: linear16 (PCM), opus, mp3, flac
+            # Let Deepgram auto-detect audio format since we're not sure of the raw format
             self.connection = await self.client.transcription.live({
                 "punctuate": True,
-                "interim_results": False,
+                "interim_results": True,  # Enable for faster feedback
                 "language": language,
                 "model": "nova-2",
                 "smart_format": True,
-                "encoding": "linear16",  # PCM 16-bit
-                "sample_rate": 16000,  # 16kHz (match Omi device)
-                "channels": 1,  # Mono
+                # Removed encoding params - let Deepgram auto-detect
             })
 
             # Set up event handlers
             def on_message(data: any) -> None:
                 try:
-                    transcript = data["channel"]["alternatives"][0]["transcript"]
+                    # Deepgram v2 SDK response format varies
+                    transcript = None
+
+                    # Try different response formats
+                    if isinstance(data, dict):
+                        # Format 1: data['channel']['alternatives'][0]['transcript']
+                        if "channel" in data and "alternatives" in data["channel"]:
+                            transcript = data["channel"]["alternatives"][0]["transcript"]
+                        # Format 2: data['alternatives'][0]['transcript']
+                        elif "alternatives" in data:
+                            transcript = data["alternatives"][0]["transcript"]
+                        # Format 3: data['transcript']
+                        elif "transcript" in data:
+                            transcript = data["transcript"]
+
                     if transcript and len(transcript) > 0:
+                        print(f"✅ Got transcript: {transcript}")
                         # Handle both sync and async callbacks
                         if inspect.iscoroutinefunction(on_transcript):
                             asyncio.create_task(on_transcript(transcript))
                         else:
                             on_transcript(transcript)
-                except (KeyError, IndexError) as e:
-                    print(f"Error parsing transcript: {e}")
+                except (KeyError, IndexError, TypeError) as e:
+                    print(f"⚠️  Error parsing transcript: {e}, data: {data}")
 
             def on_error(error: any) -> None:
                 print(f"Deepgram error: {error}")
@@ -92,8 +104,12 @@ class VoiceService:
         if self.connection and self.is_listening:
             try:
                 self.connection.send(audio_data)
+                # Log first send to confirm
+                if not hasattr(self, '_sent_first'):
+                    self._sent_first = True
+                    print(f"📤 Sending audio to Deepgram ({len(audio_data)} bytes)")
             except Exception as e:
-                print(f"Error sending audio: {e}")
+                print(f"❌ Error sending audio: {e}")
 
     async def stop_transcription(self) -> None:
         """Stop the transcription connection"""

@@ -125,8 +125,15 @@ async def transcribe_audio(websocket: WebSocket, user_id: str) -> None:
         )
 
         # Receive and process audio data
+        audio_count = 0
         while True:
             audio_data = await websocket.receive_bytes()
+            audio_count += 1
+
+            # Log every 50 chunks to see if audio is flowing
+            if audio_count % 50 == 0:
+                print(f"📡 Received {audio_count} audio chunks ({len(audio_data)} bytes in last chunk)")
+
             await voice_service.send_audio(audio_data)
 
     except WebSocketDisconnect:
