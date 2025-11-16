@@ -133,8 +133,55 @@ class DaddERuntime:
                 elif msg_type == "error":
                     print(f"❌ Error: {data.get('message', 'Unknown error')}")
 
+                elif msg_type == "audio_response":
+                    # Backend is sending TTS parameters
+                    tts_params = data.get("tts_params")
+                    response_text = data.get("text", "")
+
+                    if tts_params:
+                        print(f"🔊 Speaking: {response_text}")
+                        await self.speak_tts_response(tts_params)
+
         except Exception as e:
             print(f"❌ Error handling backend messages: {e}")
+
+    async def speak_tts_response(self, tts_params: dict) -> None:
+        """
+        Call TTS endpoint and play audio response
+
+        Args:
+            tts_params: Parameters for TTS (text, voice, speed)
+        """
+        try:
+            import subprocess
+            import tempfile
+
+            # Call TTS API
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    f"{self.backend_url}/tts/speak",
+                    json=tts_params
+                ) as response:
+                    if response.status == 200:
+                        audio_data = await response.read()
+
+                        # Save to temp file
+                        with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as temp_file:
+                            temp_file.write(audio_data)
+                            temp_path = temp_file.name
+
+                        # Play using macOS afplay (built-in)
+                        subprocess.run(["afplay", temp_path], check=True)
+
+                        # Clean up
+                        import os
+                        os.unlink(temp_path)
+                    else:
+                        error_text = await response.text()
+                        print(f"❌ TTS failed: HTTP {response.status} - {error_text}")
+
+        except Exception as e:
+            print(f"❌ Error with TTS: {e}")
 
     async def capture_and_analyze_scene(self) -> None:
         """Capture frame and send for vision analysis"""

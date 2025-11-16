@@ -5,7 +5,7 @@ Main entry point for the productivity assistant backend
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import get_settings
-from app.routers import voice, vision, actions
+from app.routers import voice, vision, actions, tts
 
 # Get settings
 settings = get_settings()
@@ -31,6 +31,7 @@ app.add_middleware(
 app.include_router(voice.router)
 app.include_router(vision.router)
 app.include_router(actions.router)
+app.include_router(tts.router)
 
 
 @app.get("/")

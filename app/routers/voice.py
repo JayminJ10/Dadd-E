@@ -5,7 +5,10 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from app.services.voice import VoiceService
 from app.services.vision import VisionService
 from app.services.database import DatabaseService
+from app.services.tts import TTSService
 from app.core.config import get_settings
+import tempfile
+import os
 
 router = APIRouter(prefix="/voice", tags=["voice"])
 
@@ -22,6 +25,7 @@ async def transcribe_audio(websocket: WebSocket, user_id: str) -> None:
     await websocket.accept()
     settings = get_settings()
     voice_service = VoiceService()
+    tts_service = TTSService()
 
     # Lazy-load services only when needed (after wake word detection)
     vision_service = None
@@ -50,6 +54,14 @@ async def transcribe_audio(websocket: WebSocket, user_id: str) -> None:
                 await websocket.send_json(
                     {"type": "wake_word", "message": "Wake word detected!"}
                 )
+
+                # Speak confirmation - send TTS URL for client to fetch
+                backend_url = os.getenv("BACKEND_URL", "http://localhost:8000")
+                await websocket.send_json({
+                    "type": "audio_response",
+                    "text": "Yes?",
+                    "tts_params": {"text": "Yes?", "voice": "nova", "speed": 1.1}
+                })
 
             # Send transcription to client
             await websocket.send_json(
